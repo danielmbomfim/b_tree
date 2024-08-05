@@ -13,6 +13,13 @@ fn main() {
     tree.insert(Item::new(30));
     tree.insert(Item::new(25));
     tree.insert(Item::new(35));
+    tree.insert(Item::new(36));
+    tree.insert(Item::new(21));
+
+    println!("{}", tree);
+
+    tree.remove(Item::new(35));
+    tree.remove(Item::new(36));
 
     println!("{}", tree);
 }
@@ -60,6 +67,10 @@ impl<T: Ord + Debug> BTree<T> {
 
         self.root.insert(item);
     }
+
+    fn remove(&mut self, item: Item<T>) {
+        self.root.remove(item);
+    }
 }
 
 impl<T: Ord + Debug> Node<T> {
@@ -77,6 +88,96 @@ impl<T: Ord + Debug> Node<T> {
 
     fn is_leaf(&self) -> bool {
         self.children.is_empty()
+    }
+
+    fn remove(&mut self, item: Item<T>) {
+        let mut index = self.items.len() - 1;
+
+        while index > 0 && item < *self.items[index] {
+            index -= 1;
+        }
+
+        if *self.items[index] == item {
+            self.items.remove(index);
+            return;
+        }
+
+        let (child_index, child) = if *self.items[index] > item {
+            (index, self.children[index].as_mut())
+        } else {
+            (index + 1, self.children[index + 1].as_mut())
+        };
+
+        child.remove(item);
+
+        if child.is_leaf() {
+            self.rebalance_leaf_after_removal(child_index);
+        }
+    }
+
+    fn rebalance_leaf_after_removal(&mut self, index: usize) {
+        if self.children[index].items.len() >= self.max_size / 2 {
+            return;
+        }
+
+        let min_size = self.max_size / 2;
+
+        if index != 0 {
+            if self.children[index - 1].items.len() > min_size {
+                self.take_item_from(index, index - 1);
+                return;
+            }
+
+            self.merge_child(index, index - 1);
+            return;
+        }
+
+        if self.children[index + 1].items.len() > min_size {
+            self.take_item_from(index, index + 1);
+            return;
+        }
+
+        self.merge_child(index, index + 1);
+    }
+
+    fn take_item_from(&mut self, dest: usize, src: usize) {
+        let current_divider = if src < dest {
+            self.items[src].as_mut()
+        } else {
+            self.items[dest].as_mut()
+        };
+
+        let item_taken = if src < dest {
+            let index = self.children[src].items.len() - 1;
+
+            self.children[src].items.remove(index)
+        } else {
+            self.children[src].items.remove(0)
+        };
+
+        let new_item = Box::new(std::mem::replace(current_divider, *item_taken));
+
+        if src < dest {
+            self.children[dest].items.insert(0, new_item);
+        } else {
+            self.children[dest].items.push(new_item);
+        }
+    }
+
+    fn merge_child(&mut self, dest: usize, src: usize) {
+        let mut temp_vec: Vec<Box<Item<T>>> = self.children[src].items.drain(..).collect();
+        let item = if src < dest {
+            self.items.remove(src)
+        } else {
+            self.items.remove(dest)
+        };
+
+        let node = self.children[dest].as_mut();
+
+        temp_vec.push(item);
+        node.items.splice(0..0, temp_vec);
+
+        self.children.remove(src);
     }
 
     fn insert(&mut self, item: Item<T>) {
