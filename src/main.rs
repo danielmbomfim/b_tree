@@ -2,25 +2,12 @@ use std::fmt::{Debug, Display, Formatter};
 
 fn main() {
     let mut tree = BTree::new(4);
-    tree.insert(Item::new(10));
-    tree.insert(Item::new(20));
-    tree.insert(Item::new(5));
-    tree.insert(Item::new(4));
-    tree.insert(Item::new(8));
-    tree.insert(Item::new(9));
-    tree.insert(Item::new(6));
-    tree.insert(Item::new(12));
-    tree.insert(Item::new(30));
-    tree.insert(Item::new(25));
-    tree.insert(Item::new(35));
-    tree.insert(Item::new(36));
-    tree.insert(Item::new(21));
 
-    println!("{}", tree);
+    for i in 1..20 {
+        tree.insert(Item::new(i));
+    }
 
-    tree.remove(Item::new(35));
-    tree.remove(Item::new(36));
-
+    tree.remove(Item::new(8));
     println!("{}", tree);
 }
 
@@ -70,6 +57,10 @@ impl<T: Ord + Debug> BTree<T> {
 
     fn remove(&mut self, item: Item<T>) {
         self.root.remove(item);
+
+        if self.root.items.is_empty() {
+            self.root = self.root.children.remove(0);
+        }
     }
 }
 
@@ -91,31 +82,23 @@ impl<T: Ord + Debug> Node<T> {
     }
 
     fn remove(&mut self, item: Item<T>) {
-        let mut index = self.items.len() - 1;
+        match self
+            .items
+            .binary_search_by(|element| element.as_ref().cmp(&item))
+        {
+            Ok(index) => {
+                self.items.remove(index);
+            }
+            Err(index) => {
+                let child = self.children[index].as_mut();
 
-        while index > 0 && item < *self.items[index] {
-            index -= 1;
-        }
-
-        if *self.items[index] == item {
-            self.items.remove(index);
-            return;
-        }
-
-        let (child_index, child) = if *self.items[index] > item {
-            (index, self.children[index].as_mut())
-        } else {
-            (index + 1, self.children[index + 1].as_mut())
+                child.remove(item);
+                self.rebalance_after_removal(index);
+            }
         };
-
-        child.remove(item);
-
-        if child.is_leaf() {
-            self.rebalance_leaf_after_removal(child_index);
-        }
     }
 
-    fn rebalance_leaf_after_removal(&mut self, index: usize) {
+    fn rebalance_after_removal(&mut self, index: usize) {
         if self.children[index].items.len() >= self.max_size / 2 {
             return;
         }
@@ -123,12 +106,16 @@ impl<T: Ord + Debug> Node<T> {
         let min_size = self.max_size / 2;
 
         if index != 0 {
+            if self.is_leaf() {
+                return;
+            }
+
             if self.children[index - 1].items.len() > min_size {
                 self.take_item_from(index, index - 1);
                 return;
             }
 
-            self.merge_child(index, index - 1);
+            self.merge_child(index - 1);
             return;
         }
 
@@ -137,7 +124,7 @@ impl<T: Ord + Debug> Node<T> {
             return;
         }
 
-        self.merge_child(index, index + 1);
+        self.merge_child(index);
     }
 
     fn take_item_from(&mut self, dest: usize, src: usize) {
@@ -147,7 +134,7 @@ impl<T: Ord + Debug> Node<T> {
             self.items[dest].as_mut()
         };
 
-        let item_taken = if src < dest {
+        let taken_item = if src < dest {
             let index = self.children[src].items.len() - 1;
 
             self.children[src].items.remove(index)
@@ -155,7 +142,7 @@ impl<T: Ord + Debug> Node<T> {
             self.children[src].items.remove(0)
         };
 
-        let new_item = Box::new(std::mem::replace(current_divider, *item_taken));
+        let new_item = Box::new(std::mem::replace(current_divider, *taken_item));
 
         if src < dest {
             self.children[dest].items.insert(0, new_item);
@@ -164,20 +151,21 @@ impl<T: Ord + Debug> Node<T> {
         }
     }
 
-    fn merge_child(&mut self, dest: usize, src: usize) {
-        let mut temp_vec: Vec<Box<Item<T>>> = self.children[src].items.drain(..).collect();
-        let item = if src < dest {
-            self.items.remove(src)
-        } else {
-            self.items.remove(dest)
-        };
+    fn merge_child(&mut self, left_index: usize) {
+        let mut left_node = self.children.remove(left_index);
 
-        let node = self.children[dest].as_mut();
+        let taken_item = self.items.remove(left_index);
+        left_node.items.push(taken_item);
 
-        temp_vec.push(item);
-        node.items.splice(0..0, temp_vec);
+        let right_node = self.children[left_index].as_mut();
 
-        self.children.remove(src);
+        left_node.items.append(&mut right_node.items);
+
+        if !right_node.is_leaf() {
+            left_node.children.append(&mut right_node.children);
+        }
+
+        self.children[left_index] = left_node;
     }
 
     fn insert(&mut self, item: Item<T>) {
