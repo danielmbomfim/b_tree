@@ -6,12 +6,16 @@ use std::{
 fn main() {
     let mut tree = BTree::new(4);
 
-    for i in 1..20 {
-        tree.insert(Item::new(i));
+    tree.insert(Item::new(1, 33));
+
+    for i in 2..20 {
+        tree.insert(Item::new(i, 1));
     }
 
     tree.remove(8);
     println!("{}", tree);
+    println!("{}", tree.get(1).unwrap().value);
+    println!("{:?}", tree.get(100));
 }
 
 #[derive(Debug)]
@@ -41,6 +45,10 @@ impl<K: Ord + Debug, V: Debug> BTree<K, V> {
             root: Box::new(Node::new(capacity)),
             max_size: capacity,
         }
+    }
+
+    fn get(&self, key: K) -> Option<&Box<Item<K, V>>> {
+        self.root.get(&key)
     }
 
     fn insert(&mut self, item: Item<K, V>) {
@@ -83,6 +91,22 @@ impl<K: Ord + Debug, V: Debug> Node<K, V> {
 
     fn is_leaf(&self) -> bool {
         self.children.is_empty()
+    }
+
+    fn get(&self, key: &K) -> Option<&Box<Item<K, V>>> {
+        match self
+            .items
+            .binary_search_by(|element| element.as_ref().cmp_key(key))
+        {
+            Ok(index) => self.items.get(index),
+            Err(index) => {
+                if self.is_leaf() {
+                    return None;
+                }
+
+                self.children[index].get(key)
+            }
+        }
     }
 
     fn remove(&mut self, key: &K) {
