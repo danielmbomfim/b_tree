@@ -1,4 +1,7 @@
-use std::fmt::{Debug, Display, Formatter};
+use std::{
+    cmp::Ordering,
+    fmt::{Debug, Display, Formatter},
+};
 
 fn main() {
     let mut tree = BTree::new(4);
@@ -7,29 +10,30 @@ fn main() {
         tree.insert(Item::new(i));
     }
 
-    tree.remove(Item::new(8));
+    tree.remove(8);
     println!("{}", tree);
 }
 
 #[derive(Debug)]
-struct BTree<T: Ord + Debug> {
-    root: Box<Node<T>>,
+struct BTree<K: Ord + Debug, V: Debug> {
+    root: Box<Node<K, V>>,
     max_size: usize,
 }
 
 #[derive(Debug)]
-struct Node<T: Ord + Debug> {
-    items: Vec<Box<Item<T>>>,
-    children: Vec<Box<Node<T>>>,
+struct Node<K: Ord + Debug, V: Debug> {
+    items: Vec<Box<Item<K, V>>>,
+    children: Vec<Box<Node<K, V>>>,
     max_size: usize,
 }
 
-#[derive(Debug, PartialEq, PartialOrd, Eq, Ord)]
-struct Item<T: Ord + Debug> {
-    value: T,
+#[derive(Debug)]
+struct Item<K: Ord + Debug, V: Debug> {
+    key: K,
+    value: V,
 }
 
-impl<T: Ord + Debug> BTree<T> {
+impl<K: Ord + Debug, V: Debug> BTree<K, V> {
     fn new(capacity: usize) -> Self {
         assert!(capacity > 1);
 
@@ -39,7 +43,7 @@ impl<T: Ord + Debug> BTree<T> {
         }
     }
 
-    fn insert(&mut self, item: Item<T>) {
+    fn insert(&mut self, item: Item<K, V>) {
         if self.root.is_full() {
             let mut new_root = Node::new(self.max_size);
 
@@ -55,8 +59,8 @@ impl<T: Ord + Debug> BTree<T> {
         self.root.insert(item);
     }
 
-    fn remove(&mut self, item: Item<T>) {
-        self.root.remove(item);
+    fn remove(&mut self, key: K) {
+        self.root.remove(&key);
 
         if self.root.items.is_empty() {
             self.root = self.root.children.remove(0);
@@ -64,7 +68,7 @@ impl<T: Ord + Debug> BTree<T> {
     }
 }
 
-impl<T: Ord + Debug> Node<T> {
+impl<K: Ord + Debug, V: Debug> Node<K, V> {
     fn new(capacity: usize) -> Self {
         Self {
             items: Vec::with_capacity(capacity),
@@ -81,10 +85,10 @@ impl<T: Ord + Debug> Node<T> {
         self.children.is_empty()
     }
 
-    fn remove(&mut self, item: Item<T>) {
+    fn remove(&mut self, key: &K) {
         match self
             .items
-            .binary_search_by(|element| element.as_ref().cmp(&item))
+            .binary_search_by(|element| element.as_ref().cmp_key(key))
         {
             Ok(index) => {
                 self.items.remove(index);
@@ -92,7 +96,7 @@ impl<T: Ord + Debug> Node<T> {
             Err(index) => {
                 let child = self.children[index].as_mut();
 
-                child.remove(item);
+                child.remove(key);
                 self.rebalance_after_removal(index);
             }
         };
@@ -168,7 +172,7 @@ impl<T: Ord + Debug> Node<T> {
         self.children[left_index] = left_node;
     }
 
-    fn insert(&mut self, item: Item<T>) {
+    fn insert(&mut self, item: Item<K, V>) {
         let mut index = self.items.len();
 
         while index > 0 && item < *self.items[index - 1] {
@@ -214,19 +218,43 @@ impl<T: Ord + Debug> Node<T> {
     }
 }
 
-impl<T: Ord + Debug> Item<T> {
-    fn new(value: T) -> Self {
-        Self { value }
+impl<K: Ord + Debug, V: Debug> Item<K, V> {
+    fn new(key: K, value: V) -> Self {
+        Self { key, value }
+    }
+
+    fn cmp_key(&self, key: &K) -> Ordering {
+        self.key.cmp(key)
     }
 }
 
-impl<T: Ord + Debug + Display> Display for BTree<T> {
+impl<K: Ord + Debug, V: Debug> PartialEq for Item<K, V> {
+    fn eq(&self, other: &Self) -> bool {
+        self.key == other.key
+    }
+}
+
+impl<K: Ord + Debug, V: Debug> Eq for Item<K, V> {}
+
+impl<K: Ord + Debug, V: Debug> PartialOrd for Item<K, V> {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl<K: Ord + Debug, V: Debug> Ord for Item<K, V> {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.key.cmp(&other.key)
+    }
+}
+
+impl<K: Ord + Debug + Display, V: Debug> Display for BTree<K, V> {
     fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
         write!(f, "BTree: \n{}", self.root)
     }
 }
 
-impl<T: Ord + Debug + Display> Display for Node<T> {
+impl<K: Ord + Debug + Display, V: Debug> Display for Node<K, V> {
     fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
         let mut result = String::new();
         self.display(&mut result, 0);
@@ -234,11 +262,11 @@ impl<T: Ord + Debug + Display> Display for Node<T> {
     }
 }
 
-impl<T: Ord + Debug + Display> Node<T> {
+impl<K: Ord + Debug + Display, V: Debug> Node<K, V> {
     fn display(&self, result: &mut String, depth: usize) {
         result.push_str(&format!("{:indent$}Node: ", "", indent = depth * 2));
         for item in &self.items {
-            result.push_str(&format!("{} ", item.value));
+            result.push_str(&format!("{} ", item.key));
         }
         result.push_str("\n");
 
